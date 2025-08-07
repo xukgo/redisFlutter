@@ -39,6 +39,7 @@ type SyncReaderOptions struct {
 	SyncAof       bool                   `mapstructure:"sync_aof" default:"true"`
 	PreferReplica bool                   `mapstructure:"prefer_replica" default:"false"`
 	TryDiskless   bool                   `mapstructure:"try_diskless" default:"false"`
+	DataDirPath   string                 `mapstructure:"data_path" default:"/tmp/redisFlutter"`
 	Sentinel      client.SentinelOptions `mapstructure:"sentinel"`
 }
 

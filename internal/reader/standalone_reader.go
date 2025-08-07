@@ -3,15 +3,16 @@ package reader
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"github.com/dustin/go-humanize"
 	"io"
 	"os"
 	"path/filepath"
+	"redisFlutter/internal/aofStorage"
 	"redisFlutter/internal/client"
 	"redisFlutter/internal/config"
 	"redisFlutter/internal/log"
 	"redisFlutter/internal/utils"
-	rotate "redisFlutter/internal/utils/file_rotate"
 	"runtime"
 	"strconv"
 	"strings"
@@ -32,20 +33,27 @@ type StandaloneReader struct {
 	stat   syncStandaloneReaderStat
 
 	// version info
-	isDiskless bool
+	isDiskless   bool
+	aofStorage   aofStorage.Storage
+	aofSaveIndex uint64
 }
 
-func NewStandaloneReader(ctx context.Context, opts *SyncReaderOptions) *StandaloneReader {
-	r := new(StandaloneReader)
-	r.opts = opts
-	r.client = client.NewRedisClient(ctx, opts.Address, opts.Username, opts.Password, opts.Tls, opts.TlsConfig, opts.PreferReplica)
-	r.stat.Name = "reader_" + strings.Replace(opts.Address, ":", "_", -1)
-	r.stat.Address = opts.Address
-	r.stat.Status = kHandShake
-	r.stat.Dir = utils.GetAbsPath(r.stat.Name)
-	utils.CreateEmptyDir(r.stat.Dir)
+func NewStandaloneReader(ctx context.Context, opts *SyncReaderOptions, aofStorage aofStorage.Storage) *StandaloneReader {
+	c := new(StandaloneReader)
+	c.opts = opts
+	c.aofStorage = aofStorage
+	c.aofSaveIndex = 0
+	c.client = client.NewRedisClient(ctx, opts.Address, opts.Username, opts.Password, opts.Tls, opts.TlsConfig, opts.PreferReplica)
 
-	return r
+	c.stat.Name = "reader_" + strings.Replace(opts.Address, ":", "_", -1)
+	c.stat.Address = opts.Address
+	c.stat.Status = kHandShake
+
+	saveDirPath, _ := filepath.Abs(opts.DataDirPath)
+	c.stat.Dir = filepath.Join(saveDirPath, c.stat.Name)
+	utils.CreateEmptyDir(c.stat.Dir)
+
+	return c
 }
 
 func (r *StandaloneReader) supportPSync() bool {
@@ -245,7 +253,7 @@ func (r *StandaloneReader) receiveRDB() string {
 	marker = strings.TrimSpace(marker)
 
 	// create rdb file
-	rdbFilePath, err := filepath.Abs(r.stat.Name + "/dump.rdb")
+	rdbFilePath := filepath.Join(r.stat.Dir, "dump.rdb")
 	if err != nil {
 		log.Panicf(err.Error())
 	}
@@ -350,8 +358,6 @@ func (r *StandaloneReader) receiveRDBWithoutDiskless(marker string, wt io.Writer
 
 func (r *StandaloneReader) receiveAOF() {
 	log.Debugf("[%s] start receiving aof data, and save to file", r.stat.Name)
-	aofWriter := rotate.NewAOFWriter(r.stat.Name, r.stat.Dir, r.stat.AofReceivedOffset)
-	defer aofWriter.Close()
 	buf := make([]byte, 16*1024) // 16KB is enough for writing file
 	for {
 		select {
@@ -363,8 +369,8 @@ func (r *StandaloneReader) receiveAOF() {
 				log.Panicf(err.Error())
 			}
 			r.stat.AofReceivedBytes += uint64(n)
-			aofWriter.Write(buf[:n])
-			log.Debugf("[%s] receiving aof data len = %d", r.stat.Name, n)
+			r.aofStorage.Append(r.nextKey(), buf[:n])
+			//log.Debugf("[%s] receiving aof data len = %d", r.stat.Name, n)
 			r.stat.AofReceivedOffset += int64(n)
 		}
 	}
@@ -386,6 +392,9 @@ func (r *StandaloneReader) sendReplconfAck() {
 	}
 }
 
-func (r *StandaloneReader) Status() interface{} {
-	return r.stat
+func (r *StandaloneReader) nextKey() []byte {
+	key := make([]byte, 8)
+	binary.BigEndian.PutUint64(key, r.aofSaveIndex)
+	r.aofSaveIndex++
+	return key
 }
