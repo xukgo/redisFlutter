@@ -1,6 +1,8 @@
 module redisFlutter
 
-go 1.24
+go 1.23.0
+
+toolchain go1.23.2
 
 require (
 	github.com/dgraph-io/badger/v4 v4.8.0
@@ -9,9 +11,9 @@ require (
 	github.com/gofrs/flock v0.12.1
 	github.com/mcuadros/go-defaults v1.2.0
 	github.com/rs/zerolog v1.34.0
+	github.com/satori/go.uuid v1.2.0
 	github.com/spf13/viper v1.20.1
 	github.com/stretchr/testify v1.10.0
-	github.com/xukgo/gsaber v0.0.0-20250428064541-5bd4dbb5bc5b
 	github.com/yuin/gopher-lua v1.1.1
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 )

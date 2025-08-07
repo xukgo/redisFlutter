@@ -16,6 +16,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -34,6 +35,7 @@ type StandaloneReader struct {
 
 	// version info
 	isDiskless   bool
+	writeCache   *IntervalMaxSizeCache
 	aofStorage   aofStorage.Storage
 	aofSaveIndex uint64
 }
@@ -43,6 +45,7 @@ func NewStandaloneReader(ctx context.Context, opts *SyncReaderOptions, aofStorag
 	c.opts = opts
 	c.aofStorage = aofStorage
 	c.aofSaveIndex = 0
+	c.writeCache = NewIntervalMaxSizeCache(time.Millisecond*500, 16*1024)
 	c.client = client.NewRedisClient(ctx, opts.Address, opts.Username, opts.Password, opts.Tls, opts.TlsConfig, opts.PreferReplica)
 
 	c.stat.Name = "reader_" + strings.Replace(opts.Address, ":", "_", -1)
@@ -358,20 +361,40 @@ func (r *StandaloneReader) receiveRDBWithoutDiskless(marker string, wt io.Writer
 
 func (r *StandaloneReader) receiveAOF() {
 	log.Debugf("[%s] start receiving aof data, and save to file", r.stat.Name)
+	ticker := time.NewTicker(300 * time.Millisecond)
+	defer ticker.Stop()
+
+	once := new(sync.Once)
 	buf := make([]byte, 16*1024) // 16KB is enough for writing file
 	for {
 		select {
 		case <-r.ctx.Done():
 			return
+		case <-ticker.C:
+			buff := r.writeCache.GetCache()
+			dtNow := time.Now()
+			if r.writeCache.CheckTimeout(dtNow) && len(buff) > 0 {
+				r.aofStorage.Append(r.nextKey(), buf)
+				r.writeCache.Reset(dtNow)
+			}
+			break
 		default:
 			n, err := r.client.Read(buf)
 			if err != nil {
 				log.Panicf(err.Error())
 			}
 			r.stat.AofReceivedBytes += uint64(n)
-			r.aofStorage.Append(r.nextKey(), buf[:n])
 			//log.Debugf("[%s] receiving aof data len = %d", r.stat.Name, n)
 			r.stat.AofReceivedOffset += int64(n)
+
+			dtNow := time.Now()
+			once.Do(func() { r.writeCache.Reset(dtNow) })
+			r.writeCache.AppendWithAction(dtNow, buf[:n], func(indata []byte) error {
+				if len(indata) > 0 {
+					return r.aofStorage.Append(r.nextKey(), indata)
+				}
+				return nil
+			})
 		}
 	}
 }

@@ -11,16 +11,16 @@ type KeyStartIterator struct {
 	buffer        *bytes.Buffer
 	startKeyIndex uint64
 
-	formatKeyBuffer []byte
+	//formatKeyBuffer []byte
 }
 
 func NewKeyStartIterator(initCacheSize int64) *KeyStartIterator {
 	cache := make([]byte, 0, initCacheSize)
 	c := &KeyStartIterator{
-		commitKeys:      make([][]byte, 0, 1024),
-		startKeyIndex:   0,
-		buffer:          bytes.NewBuffer(cache),
-		formatKeyBuffer: make([]byte, 8),
+		commitKeys:    make([][]byte, 0, 1024),
+		startKeyIndex: 0,
+		buffer:        bytes.NewBuffer(cache),
+		//formatKeyBuffer: make([]byte, 8),
 	}
 	return c
 }
@@ -36,6 +36,9 @@ func (c *KeyStartIterator) SetStartKey(idx uint64) {
 	c.startKeyIndex = idx
 }
 
+func (c *KeyStartIterator) GetCurrentKeyIndex() uint64 {
+	return c.startKeyIndex
+}
 func (c *KeyStartIterator) GetWriter() io.Writer {
 	return c.buffer
 }
@@ -45,10 +48,10 @@ func (c *KeyStartIterator) GetBufferCap() int {
 }
 
 func (c *KeyStartIterator) NextKey() []byte {
-	//c.formatKeyBuffer = c.formatKeyBuffer[:0]
-	binary.BigEndian.PutUint64(c.formatKeyBuffer, c.startKeyIndex)
+	buffer := make([]byte, 8)
+	binary.BigEndian.PutUint64(buffer, c.startKeyIndex)
 	c.startKeyIndex++
-	return c.formatKeyBuffer
+	return buffer
 	//return strconv.AppendInt(c.formatKeyBuffer, idx, 10)
 }
 

@@ -94,9 +94,11 @@ func (c *BadgerAofStorage) ReadFunc(iterator DbWriteIterator) error {
 				return nil
 			}
 
+			cindex := iterator.GetCurrentKeyIndex()
 			key := iterator.NextKey()
 			item, err := txn.Get(key)
 			if err != nil {
+				iterator.SetStartKey(cindex)
 				if errors.Is(err, badger.ErrKeyNotFound) {
 					return nil
 				}
@@ -106,9 +108,11 @@ func (c *BadgerAofStorage) ReadFunc(iterator DbWriteIterator) error {
 			if item.ValueSize() > int64(iterator.GetBufferCap()) {
 				slog.Warn("get max size data from BadgerDb", slog.Int64("size", item.ValueSize())) //, slog.String("key", stringUtil.NoCopyBytes2String(item.Key())))
 				if writeCount > 0 {
+					iterator.SetStartKey(cindex)
 					return nil
 				}
 			} else if writeCount+item.ValueSize() > int64(iterator.GetBufferCap()) {
+				iterator.SetStartKey(cindex)
 				return nil
 			}
 			err = item.Value(func(val []byte) error {
@@ -118,6 +122,7 @@ func (c *BadgerAofStorage) ReadFunc(iterator DbWriteIterator) error {
 				return err
 			})
 			if err != nil {
+				iterator.SetStartKey(cindex)
 				return err
 			}
 		}

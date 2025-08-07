@@ -5,7 +5,8 @@ import "io"
 type DbWriteIterator interface {
 	GetBufferCap() int
 	GetWriter() io.Writer
-	SetStartKey(int64)
+	SetStartKey(uint64)
+	GetCurrentKeyIndex() uint64
 	//AppendMaxCap(int64)
 	NextKey() []byte
 	CommitKey([]byte)
