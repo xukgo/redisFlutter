@@ -10,7 +10,7 @@ import (
 	"redisFlutter/internal/utils"
 )
 
-// CalcKeys https://redis.io/docs/reference/key-specs/
+// CalcKeys https://redis.io/docs/reference/key-specs/ https://redis.io/docs/latest/develop/reference/key-specs/
 func CalcKeys(argv []string) (cmaName string, group string, keys []string, keysIndexes []int) {
 	argc := len(argv)
 	group = "unknown"
