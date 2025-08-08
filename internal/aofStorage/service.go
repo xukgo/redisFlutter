@@ -20,3 +20,10 @@ type Storage interface {
 	ReadFunc(iterator DbWriteIterator) error
 	Destroy()
 }
+
+type FileStorage interface {
+	Append(key []byte, value []byte) error
+	DeleteArray(keys [][]byte) error
+	ReadFunc(iterator DbWriteIterator) error
+	Destroy()
+}

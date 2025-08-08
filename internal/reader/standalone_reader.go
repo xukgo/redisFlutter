@@ -4,22 +4,18 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
-	"errors"
 	"github.com/dustin/go-humanize"
 	"io"
-	"log/slog"
-	"net"
 	"os"
 	"path/filepath"
-	"redisFlutter/internal/aofStorage"
 	"redisFlutter/internal/client"
 	"redisFlutter/internal/config"
 	"redisFlutter/internal/log"
 	"redisFlutter/internal/utils"
+	rotate "redisFlutter/internal/utils/file_rotate"
 	"runtime"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -37,18 +33,18 @@ type StandaloneReader struct {
 	stat   syncStandaloneReaderStat
 
 	// version info
-	isDiskless   bool
-	writeCache   *IntervalMaxSizeCache
-	aofStorage   aofStorage.Storage
+	isDiskless bool
+	//writeCache   *IntervalMaxSizeCache
+	//aofStorage   io.Writer
 	aofSaveIndex uint64
 }
 
-func NewStandaloneReader(ctx context.Context, opts *SyncReaderOptions, aofStorage aofStorage.Storage) *StandaloneReader {
+func NewStandaloneReader(ctx context.Context, opts *SyncReaderOptions) *StandaloneReader {
 	c := new(StandaloneReader)
 	c.opts = opts
-	c.aofStorage = aofStorage
+	//c.aofStorage = aofStorage
 	c.aofSaveIndex = 0
-	c.writeCache = NewIntervalMaxSizeCache(time.Millisecond*500, 16*1024)
+	//c.writeCache = NewIntervalMaxSizeCache(time.Millisecond*500, 16*1024)
 	c.client = client.NewRedisClient(ctx, opts.Address, opts.Username, opts.Password, opts.Tls, opts.TlsConfig, opts.PreferReplica)
 
 	c.stat.Name = "reader_" + strings.Replace(opts.Address, ":", "_", -1)
@@ -364,47 +360,54 @@ func (r *StandaloneReader) receiveRDBWithoutDiskless(marker string, wt io.Writer
 
 func (r *StandaloneReader) receiveAOF() {
 	log.Debugf("[%s] start receiving aof data, and save to file", r.stat.Name)
+	aofWriter := rotate.NewAOFWriter(r.stat.Name, r.stat.Dir, r.stat.AofReceivedOffset)
+	defer aofWriter.Close()
 
-	once := new(sync.Once)
+	//once := new(sync.Once)
 	buf := make([]byte, 16*1024) // 16KB is enough for writing file
 	for {
 		select {
 		case <-r.ctx.Done():
 			return
 		default:
-			//n, err := r.client.Read(buf)
-			//if err != nil {
-			//	log.Panicf(err.Error())
-			//}
-			n, err := r.client.ReadTimeout(buf, time.Millisecond*500)
+			n, err := r.client.Read(buf)
 			if err != nil {
-				var netErr net.Error
-				if errors.As(err, &netErr) {
-					if netErr.Timeout() {
-						//slog.Debug("redis client read timeout error", slog.String("error", err.Error()))
-						// 处理超时逻辑
-						_ = r.writeCache.ActionIfTimeout(time.Now(), func(indata []byte) error {
-							return r.aofStorage.Append(r.nextKey(), indata)
-						})
-						continue
-					}
-				}
-				slog.Error("redis client read error", slog.String("error", err.Error()))
 				log.Panicf(err.Error())
 			}
 			r.stat.AofReceivedBytes += uint64(n)
 			//log.Debugf("[%s] receiving aof data len = %d", r.stat.Name, n)
+			aofWriter.Write(buf[:n])
 			r.stat.AofReceivedOffset += int64(n)
 
+			//n, err := r.client.ReadTimeout(buf, time.Millisecond*500)
+			//if err != nil {
+			//	var netErr net.Error
+			//	if errors.As(err, &netErr) {
+			//		if netErr.Timeout() {
+			//			//slog.Debug("redis client read timeout error", slog.String("error", err.Error()))
+			//			// 处理超时逻辑
+			//			_ = r.writeCache.ActionIfTimeout(time.Now(), func(indata []byte) error {
+			//				return r.aofStorage.Append(r.nextKey(), indata)
+			//			})
+			//			continue
+			//		}
+			//	}
+			//	slog.Error("redis client read error", slog.String("error", err.Error()))
+			//	log.Panicf(err.Error())
+			//}
+			//r.stat.AofReceivedBytes += uint64(n)
+			////log.Debugf("[%s] receiving aof data len = %d", r.stat.Name, n)
+			//r.stat.AofReceivedOffset += int64(n)
+
 			//slog.Debug("redis client read", slog.Int("len", n))
-			dtNow := time.Now()
-			once.Do(func() { r.writeCache.reset(dtNow) })
-			_ = r.writeCache.AppendWithAction(dtNow, buf[:n], func(indata []byte) error {
-				if len(indata) > 0 {
-					return r.aofStorage.Append(r.nextKey(), indata)
-				}
-				return nil
-			})
+			//dtNow := time.Now()
+			//once.Do(func() { r.writeCache.reset(dtNow) })
+			//_ = r.writeCache.AppendWithAction(dtNow, buf[:n], func(indata []byte) error {
+			//	if len(indata) > 0 {
+			//		return r.aofStorage.Append(r.nextKey(), indata)
+			//	}
+			//	return nil
+			//})
 		}
 	}
 }
