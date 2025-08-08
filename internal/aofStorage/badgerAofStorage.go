@@ -38,7 +38,7 @@ func NewBadgerAofStorage(dbPath string) (*BadgerAofStorage, error) {
 func (c *BadgerAofStorage) Append(key []byte, value []byte) error {
 	c.locker.Lock()
 	defer c.locker.Unlock()
-	slog.Debug("BadgerAofStorage append", slog.String("key", string(key)))
+	slog.Debug("BadgerAofStorage append", slog.String("key", string(key)), slog.Int("val_len", len(value)))
 	return c.db.Update(func(txn *badger.Txn) error {
 		return txn.Set(key, value)
 	})

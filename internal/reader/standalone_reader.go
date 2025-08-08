@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"github.com/dustin/go-humanize"
 	"io"
+	"log/slog"
+	"net"
 	"os"
 	"path/filepath"
 	"redisFlutter/internal/aofStorage"
@@ -361,8 +364,6 @@ func (r *StandaloneReader) receiveRDBWithoutDiskless(marker string, wt io.Writer
 
 func (r *StandaloneReader) receiveAOF() {
 	log.Debugf("[%s] start receiving aof data, and save to file", r.stat.Name)
-	ticker := time.NewTicker(300 * time.Millisecond)
-	defer ticker.Stop()
 
 	once := new(sync.Once)
 	buf := make([]byte, 16*1024) // 16KB is enough for writing file
@@ -370,26 +371,35 @@ func (r *StandaloneReader) receiveAOF() {
 		select {
 		case <-r.ctx.Done():
 			return
-		case <-ticker.C:
-			buff := r.writeCache.GetCache()
-			dtNow := time.Now()
-			if r.writeCache.CheckTimeout(dtNow) && len(buff) > 0 {
-				r.aofStorage.Append(r.nextKey(), buf)
-				r.writeCache.Reset(dtNow)
-			}
-			break
 		default:
-			n, err := r.client.Read(buf)
+			//n, err := r.client.Read(buf)
+			//if err != nil {
+			//	log.Panicf(err.Error())
+			//}
+			n, err := r.client.ReadTimeout(buf, time.Millisecond*500)
 			if err != nil {
+				var netErr net.Error
+				if errors.As(err, &netErr) {
+					if netErr.Timeout() {
+						//slog.Debug("redis client read timeout error", slog.String("error", err.Error()))
+						// 处理超时逻辑
+						_ = r.writeCache.ActionIfTimeout(time.Now(), func(indata []byte) error {
+							return r.aofStorage.Append(r.nextKey(), indata)
+						})
+						continue
+					}
+				}
+				slog.Error("redis client read error", slog.String("error", err.Error()))
 				log.Panicf(err.Error())
 			}
 			r.stat.AofReceivedBytes += uint64(n)
 			//log.Debugf("[%s] receiving aof data len = %d", r.stat.Name, n)
 			r.stat.AofReceivedOffset += int64(n)
 
+			//slog.Debug("redis client read", slog.Int("len", n))
 			dtNow := time.Now()
-			once.Do(func() { r.writeCache.Reset(dtNow) })
-			r.writeCache.AppendWithAction(dtNow, buf[:n], func(indata []byte) error {
+			once.Do(func() { r.writeCache.reset(dtNow) })
+			_ = r.writeCache.AppendWithAction(dtNow, buf[:n], func(indata []byte) error {
 				if len(indata) > 0 {
 					return r.aofStorage.Append(r.nextKey(), indata)
 				}

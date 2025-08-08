@@ -244,6 +244,10 @@ func (r *Redis) Read(p []byte) (int, error) {
 	return r.reader.Read(p)
 }
 
+func (r *Redis) ReadTimeout(p []byte, timeout time.Duration) (int, error) {
+	r.conn.SetReadDeadline(time.Now().Add(timeout))
+	return r.reader.Read(p)
+}
 func (r *Redis) ReadByte() (byte, error) {
 	return r.reader.ReadByte()
 }
