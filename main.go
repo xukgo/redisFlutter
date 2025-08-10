@@ -5,10 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"redisFlutter/internal/aofStorage"
 	"redisFlutter/internal/log"
 	"redisFlutter/internal/reader"
-	rotate "redisFlutter/internal/utils/file_rotate"
 	"time"
 )
 
@@ -25,7 +23,7 @@ func main() {
 	defer cancel()
 
 	opt := reader.SyncReaderOptions{
-		Address:     "192.168.157.224:36001",
+		Address:     "127.0.0.1:36001",
 		DataDirPath: "/tmp/redisFlutter/inst1",
 	}
 

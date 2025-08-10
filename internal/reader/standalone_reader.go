@@ -3,7 +3,6 @@ package reader
 import (
 	"bytes"
 	"context"
-	"encoding/binary"
 	"github.com/dustin/go-humanize"
 	"io"
 	"os"
@@ -21,29 +20,23 @@ import (
 
 type StandaloneReader struct {
 	opts *SyncReaderOptions
-	//Address   string           `mapstructure:"address" default:""`
-	//Username  string           `mapstructure:"username" default:""`
-	//Password  string           `mapstructure:"password" default:""`
-	//Tls       bool             `mapstructure:"tls" default:"false"`
-	//TlsConfig client.TlsConfig `mapstructure:"tls_config" default:"{}"`
 
 	ctx    context.Context
 	client *client.Redis
 	DbId   int
 	stat   syncStandaloneReaderStat
 
-	// version info
 	isDiskless bool
 	//writeCache   *IntervalMaxSizeCache
 	//aofStorage   io.Writer
-	aofSaveIndex uint64
+	//aofSaveIndex uint64
 }
 
 func NewStandaloneReader(ctx context.Context, opts *SyncReaderOptions) *StandaloneReader {
 	c := new(StandaloneReader)
 	c.opts = opts
 	//c.aofStorage = aofStorage
-	c.aofSaveIndex = 0
+	//c.aofSaveIndex = 0
 	//c.writeCache = NewIntervalMaxSizeCache(time.Millisecond*500, 16*1024)
 	c.client = client.NewRedisClient(ctx, opts.Address, opts.Username, opts.Password, opts.Tls, opts.TlsConfig, opts.PreferReplica)
 
@@ -52,7 +45,7 @@ func NewStandaloneReader(ctx context.Context, opts *SyncReaderOptions) *Standalo
 	c.stat.Status = kHandShake
 
 	saveDirPath, _ := filepath.Abs(opts.DataDirPath)
-	c.stat.Dir = filepath.Join(saveDirPath, c.stat.Name)
+	c.stat.Dir = saveDirPath //filepath.Join(saveDirPath, c.stat.Name)
 	utils.CreateEmptyDir(c.stat.Dir)
 
 	return c
@@ -428,9 +421,9 @@ func (r *StandaloneReader) sendReplconfAck() {
 	}
 }
 
-func (r *StandaloneReader) nextKey() []byte {
-	key := make([]byte, 8)
-	binary.BigEndian.PutUint64(key, r.aofSaveIndex)
-	r.aofSaveIndex++
-	return key
-}
+//func (r *StandaloneReader) nextKey() []byte {
+//	key := make([]byte, 8)
+//	binary.BigEndian.PutUint64(key, r.aofSaveIndex)
+//	r.aofSaveIndex++
+//	return key
+//}

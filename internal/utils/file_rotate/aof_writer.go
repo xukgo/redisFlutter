@@ -7,7 +7,7 @@ import (
 	"redisFlutter/internal/log"
 )
 
-const MaxFileSize = 1024 * 1024 * 1024 // 1G
+const MaxFileSize = 8 * 1024 * 1024 // 8M
 
 type AOFWriter struct {
 	name string
@@ -36,7 +36,7 @@ func (w *AOFWriter) openFile(offset int64) {
 	}
 	w.offset = offset
 	w.filesize = 0
-	log.Debugf("[%s] open file for write. filename=[%s]", w.name, w.filepath)
+	log.Debugf("[%s] open file for write. filename=[%s], offset=%d", w.name, w.filepath, w.offset)
 }
 
 func (w *AOFWriter) Write(buf []byte) {
@@ -64,5 +64,5 @@ func (w *AOFWriter) Close() {
 	if err != nil {
 		log.Panicf(err.Error())
 	}
-	log.Infof("[%s] close file. filename=[%s], filesize=[%d]", w.name, w.filepath, w.filesize)
+	log.Infof("[%s] close file. filename=[%s], filesize=[%d] offset=[%d]", w.name, w.filepath, w.filesize, w.offset)
 }
