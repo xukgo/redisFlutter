@@ -23,11 +23,43 @@ type Entry struct {
 	SerializedSize int64
 }
 
+func (e *Entry) Reset() {
+	e.DbId = 0
+	e.Argv = e.Argv[:0]
+	e.CmdName = ""
+	e.Group = ""
+	e.Keys = e.Keys[:0]
+	e.KeyIndexes = e.KeyIndexes[:0]
+	e.Slots = e.Slots[:0]
+	e.SerializedSize = 0
+}
+
 func NewEntry() *Entry {
 	e := new(Entry)
+	e.Argv = make([]string, 0, 4)
+	e.Keys = make([]string, 0, 4)
+	e.KeyIndexes = make([]int, 0, 4)
+	e.Slots = make([]int, 0, 4)
 	return e
 }
 
+func (e *Entry) Clone() *Entry {
+	m := new(Entry)
+	m.DbId = e.DbId
+	m.CmdName = e.CmdName
+	m.Group = e.Group
+	m.SerializedSize = e.SerializedSize
+
+	m.Argv = make([]string, 0, len(e.Argv))
+	m.Argv = append(m.Argv, e.Argv...)
+	m.Keys = make([]string, 0, len(e.Keys))
+	m.Keys = append(m.Keys, e.Keys...)
+	m.KeyIndexes = make([]int, 0, len(e.KeyIndexes))
+	m.KeyIndexes = append(m.KeyIndexes, e.KeyIndexes...)
+	m.Slots = make([]int, 0, len(e.Slots))
+	m.Slots = append(m.Slots, e.Slots...)
+	return m
+}
 func (e *Entry) String() string {
 	str := strings.Join(e.Argv, " ")
 	if len(str) > 100 {

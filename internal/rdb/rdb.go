@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"go.uber.org/atomic"
 	"io"
 	"os"
 	"strconv"
@@ -42,7 +43,11 @@ const (
 )
 
 type Loader struct {
-	replStreamDbId int // https://github.com/tair-opensource/RedisShake/pull/430#issuecomment-1099014464
+	//* 实际部署使用的并不是两个空节点。实际架构为：A(master) -> B(slave & source) -> sync -> C(target)
+	//我们为了避免对master造成可能的影响，同步的源选择的是slave节点。
+	//在使用 redis-cli --replica 连接来源实例的master A、slave B 后，可以看到：master A 会在增量阶段第一个命令会强制发送 select db 命令。而 slave B 并不会。可以在 redis 源码中： replicationFeedSlaves 以及 replicationFeedSlavesFromMasterStream 发现两者差异
+	//另外根据 Redis rdb以及加载rdb 的逻辑，slave 加载 rdb后，会在 rdb 头信息得到repl_stream_db ，并将master连接的db设置为该值。因此参考这部分逻辑， 应该保留解析rdb时得到的repl_stream_db， 并且在增量同步阶段将 repl_stream_db 认为是来源 db。
+	replStreamDbId int
 
 	nowDBId  int
 	expireMs int64
@@ -55,17 +60,26 @@ type Loader struct {
 	ch         chan *entry.Entry
 	dumpBuffer bytes.Buffer
 
-	name       string
-	updateFunc func(int64)
+	name                  string
+	rdbSize               *atomic.Int64
+	updateRdbFileSizeFunc func(int64)
 }
 
-func NewLoader(name string, updateFunc func(int64), filPath string, ch chan *entry.Entry) *Loader {
+func NewLoader(name string, filPath string, ch chan *entry.Entry) *Loader {
 	ld := new(Loader)
 	ld.ch = ch
 	ld.filPath = filPath
 	ld.name = name
-	ld.updateFunc = updateFunc
+	ld.rdbSize = atomic.NewInt64(0)
+	ld.updateRdbFileSizeFunc = nil
 	return ld
+}
+
+func (ld *Loader) SetParseSizeUpdateFunc(updateFunc func(int64)) {
+	ld.updateRdbFileSizeFunc = updateFunc
+}
+func (ld *Loader) GetRdbSize() int64 {
+	return ld.rdbSize.Load()
 }
 
 // ParseRDB parse rdb file
@@ -107,14 +121,14 @@ func (ld *Loader) ParseRDB(ctx context.Context) int {
 func (ld *Loader) parseRDBEntry(ctx context.Context, rd *bufio.Reader) {
 	// for stat
 	updateProcessSize := func() {
-		if ld.updateFunc == nil {
-			return
-		}
 		offset, err := ld.fp.Seek(0, io.SeekCurrent)
 		if err != nil {
 			log.Panicf(err.Error())
 		}
-		ld.updateFunc(offset)
+		ld.rdbSize.Store(offset)
+		if ld.updateRdbFileSizeFunc != nil {
+			ld.updateRdbFileSizeFunc(offset)
+		}
 	}
 	defer updateProcessSize()
 
