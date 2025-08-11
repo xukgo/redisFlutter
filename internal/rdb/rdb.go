@@ -57,17 +57,18 @@ type Loader struct {
 	filPath string
 	fp      *os.File
 
-	ch         chan *entry.Entry
+	//ch         chan *entry.Entry
 	dumpBuffer bytes.Buffer
 
 	name                  string
 	rdbSize               *atomic.Int64
 	updateRdbFileSizeFunc func(int64)
+	entryCallback         func(*entry.Entry)
 }
 
-func NewLoader(name string, filPath string, ch chan *entry.Entry) *Loader {
+func NewLoader(name string, filPath string) *Loader {
 	ld := new(Loader)
-	ld.ch = ch
+	//ld.ch = ch
 	ld.filPath = filPath
 	ld.name = name
 	ld.rdbSize = atomic.NewInt64(0)
@@ -77,6 +78,9 @@ func NewLoader(name string, filPath string, ch chan *entry.Entry) *Loader {
 
 func (ld *Loader) SetParseSizeUpdateFunc(updateFunc func(int64)) {
 	ld.updateRdbFileSizeFunc = updateFunc
+}
+func (ld *Loader) SetEntryCallback(cb func(*entry.Entry)) {
+	ld.entryCallback = cb
 }
 func (ld *Loader) GetRdbSize() int64 {
 	return ld.rdbSize.Load()
@@ -135,6 +139,8 @@ func (ld *Loader) parseRDBEntry(ctx context.Context, rd *bufio.Reader) {
 	// read one entry
 	ticker := time.NewTicker(time.Second * 1)
 	defer ticker.Stop()
+
+	e := entry.NewEntry()
 	for {
 		typeByte := structure.ReadByte(rd)
 		log.Debugf("RDB type byte is: [%d]", typeByte)
@@ -148,9 +154,10 @@ func (ld *Loader) parseRDBEntry(ctx context.Context, rd *bufio.Reader) {
 		case kFlagFunction2:
 			function := structure.ReadString(rd)
 			log.Debugf("function: %s", function)
-			e := entry.NewEntry()
-			e.Argv = []string{"function", "load", function}
-			ld.ch <- e
+
+			e.Reset()
+			e.Argv = append(e.Argv, "function", "load", function)
+			ld.entryCallback(e)
 		case kFlagModuleAux:
 			moduleId := structure.ReadLength(rd) // module id
 			moduleName := types.ModuleTypeNameByID(moduleId)
@@ -188,10 +195,10 @@ func (ld *Loader) parseRDBEntry(ctx context.Context, rd *bufio.Reader) {
 				}
 				log.Debugf("[%s] RDB repl-stream-db: [%s]", ld.name, value)
 			} else if key == "lua" {
-				e := entry.NewEntry()
-				e.Argv = []string{"script", "load", value}
-				ld.ch <- e
 				log.Debugf("[%s] LUA script: [%s]", ld.name, value)
+				e.Reset()
+				e.Argv = append(e.Argv, "script", "load", value)
+				ld.entryCallback(e)
 			} else {
 				log.Debugf("[%s] RDB AUX: key=[%s], value=[%s]", ld.name, key, value)
 			}
@@ -218,16 +225,16 @@ func (ld *Loader) parseRDBEntry(ctx context.Context, rd *bufio.Reader) {
 			o := types.ParseObject(rd, typeByte, key)
 			cmdC := o.Rewrite()
 			for cmd := range cmdC {
-				e := entry.NewEntry()
+				e.Reset()
 				e.DbId = ld.nowDBId
-				e.Argv = cmd
-				ld.ch <- e
+				e.Argv = append(e.Argv, cmd...)
+				ld.entryCallback(e)
 			}
 			if ld.expireMs != 0 {
-				e := entry.NewEntry()
+				e.Reset()
 				e.DbId = ld.nowDBId
-				e.Argv = []string{"PEXPIRE", key, strconv.FormatInt(ld.expireMs, 10)}
-				ld.ch <- e
+				e.Argv = append(e.Argv, "PEXPIRE", key, strconv.FormatInt(ld.expireMs, 10))
+				ld.entryCallback(e)
 			}
 			ld.expireMs = 0
 			ld.idle = 0

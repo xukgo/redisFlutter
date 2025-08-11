@@ -50,8 +50,11 @@ func (r *rdbReader) StartRead(ctx context.Context) []chan *entry.Entry {
 		r.stat.Percent = fmt.Sprintf("%.2f%%", float64(offset)/float64(r.stat.FileSizeBytes)*100)
 		r.stat.Status = fmt.Sprintf("[%s] rdb file synced: %s", r.stat.Name, r.stat.Percent)
 	}
-	rdbLoader := rdb.NewLoader(r.stat.Name, r.stat.Filepath, r.ch)
+	rdbLoader := rdb.NewLoader(r.stat.Name, r.stat.Filepath)
 	rdbLoader.SetParseSizeUpdateFunc(updateFunc)
+	rdbLoader.SetEntryCallback(func(e *entry.Entry) {
+		r.ch <- e
+	})
 
 	go func() {
 		_ = rdbLoader.ParseRDB(ctx)

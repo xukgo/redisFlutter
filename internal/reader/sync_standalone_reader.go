@@ -468,10 +468,14 @@ func (r *syncStandaloneReader) sendRDB(rdbFilePath string) {
 	// start parse rdb
 	log.Debugf("[%s] start sending RDB to target", r.stat.Name)
 	r.stat.Status = kSyncRdb
-	//updateRdbFileSizeFunc := func(offset int64) {
-	//	r.stat.RdbSentBytes = uint64(offset)
-	//}
-	rdbLoader := rdb.NewLoader(r.stat.Name, rdbFilePath, r.ch)
+	updateRdbFileSizeFunc := func(offset int64) {
+		r.stat.RdbSentBytes = uint64(offset)
+	}
+	rdbLoader := rdb.NewLoader(r.stat.Name, rdbFilePath)
+	rdbLoader.SetParseSizeUpdateFunc(updateRdbFileSizeFunc)
+	rdbLoader.SetEntryCallback(func(e *entry.Entry) {
+		r.ch <- e
+	})
 	r.DbId = rdbLoader.ParseRDB(r.ctx)
 	log.Debugf("[%s] send RDB finished", r.stat.Name)
 	r.stat.RdbSentBytes = uint64(rdbLoader.GetRdbSize())

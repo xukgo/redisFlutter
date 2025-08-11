@@ -25,9 +25,10 @@ type Entry struct {
 
 func (e *Entry) Reset() {
 	e.DbId = 0
-	e.Argv = e.Argv[:0]
 	e.CmdName = ""
 	e.Group = ""
+
+	e.Argv = e.Argv[:0]
 	e.Keys = e.Keys[:0]
 	e.KeyIndexes = e.KeyIndexes[:0]
 	e.Slots = e.Slots[:0]
