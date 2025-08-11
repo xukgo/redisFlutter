@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 	"sync"
@@ -110,7 +111,7 @@ func (w *StandaloneWriter) processWrite(ctx context.Context) {
 			for e.SerializedSize+atomic.LoadInt64(&w.stat.UnansweredBytes) > config.Opt.Advanced.TargetRedisClientMaxQuerybufLen {
 				time.Sleep(1 * time.Nanosecond)
 			}
-			log.Debugf("[%s] send cmd. cmd=[%s]", w.stat.Name, e.String())
+			//slog.Debug("send redis cmd", slog.String("cmd", e.String()))
 			if !w.offReply {
 				select {
 				case w.chWaitReply <- e:
@@ -127,9 +128,12 @@ func (w *StandaloneWriter) processWrite(ctx context.Context) {
 }
 
 func (w *StandaloneWriter) processReply() {
+	var count int64 = 0
 	for e := range w.chWaitReply {
 		reply, err := w.client.Receive()
-		log.Debugf("[%s] receive reply. reply=[%v], cmd=[%s]", w.stat.Name, reply, e.String())
+		_ = reply
+		//slog.Debug("receive redis reply", slog.Any("reply", reply), slog.String("cmd", e.String()))
+		count++
 
 		// It's good to skip the nil error since some write commands will return the null reply. For example,
 		// the SET command with NX option will return nil if the key already exists.
@@ -151,6 +155,7 @@ func (w *StandaloneWriter) processReply() {
 		atomic.AddInt64(&w.stat.UnansweredEntries, -1)
 	}
 	w.chWaitWg.Done()
+	slog.Debug("receive redis reply end", slog.Int64("count", count))
 }
 
 func (w *StandaloneWriter) Status() interface{} {
