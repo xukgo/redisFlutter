@@ -6,7 +6,7 @@ import (
 )
 
 func Test_aof_reader01(t *testing.T) {
-	aofFilePath := "/home/hermes/work/github/redisFlutter/data/0.aof"
+	aofFilePath := "/home/hermes/work/github/redisFlutter/data/b01.aof"
 	r := NewAOFReader(&AOFReaderOptions{
 		Filepath:     aofFilePath,
 		AOFTimestamp: 0,

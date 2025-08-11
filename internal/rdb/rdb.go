@@ -63,7 +63,7 @@ type Loader struct {
 	name                  string
 	rdbSize               *atomic.Int64
 	updateRdbFileSizeFunc func(int64)
-	entryCallback         func(*entry.Entry)
+	entryCallback         func(*entry.Entry) //reuse single entry object memory
 }
 
 func NewLoader(name string, filPath string) *Loader {

@@ -371,36 +371,6 @@ func (r *StandaloneReader) receiveAOF() {
 			//log.Debugf("[%s] receiving aof data len = %d", r.stat.Name, n)
 			aofWriter.Write(buf[:n])
 			r.stat.AofReceivedOffset += int64(n)
-
-			//n, err := r.client.ReadTimeout(buf, time.Millisecond*500)
-			//if err != nil {
-			//	var netErr net.Error
-			//	if errors.As(err, &netErr) {
-			//		if netErr.Timeout() {
-			//			//slog.Debug("redis client read timeout error", slog.String("error", err.Error()))
-			//			// 处理超时逻辑
-			//			_ = r.writeCache.ActionIfTimeout(time.Now(), func(indata []byte) error {
-			//				return r.aofStorage.Append(r.nextKey(), indata)
-			//			})
-			//			continue
-			//		}
-			//	}
-			//	slog.Error("redis client read error", slog.String("error", err.Error()))
-			//	log.Panicf(err.Error())
-			//}
-			//r.stat.AofReceivedBytes += uint64(n)
-			////log.Debugf("[%s] receiving aof data len = %d", r.stat.Name, n)
-			//r.stat.AofReceivedOffset += int64(n)
-
-			//slog.Debug("redis client read", slog.Int("len", n))
-			//dtNow := time.Now()
-			//once.Do(func() { r.writeCache.reset(dtNow) })
-			//_ = r.writeCache.AppendWithAction(dtNow, buf[:n], func(indata []byte) error {
-			//	if len(indata) > 0 {
-			//		return r.aofStorage.Append(r.nextKey(), indata)
-			//	}
-			//	return nil
-			//})
 		}
 	}
 }
