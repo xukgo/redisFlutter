@@ -32,13 +32,17 @@ type StandaloneReader struct {
 	//aofSaveIndex uint64
 }
 
-func NewStandaloneReader(ctx context.Context, opts *SyncReaderOptions) *StandaloneReader {
+func NewStandaloneReader(ctx context.Context, opts *SyncReaderOptions) (*StandaloneReader, error) {
+	var err error
 	c := new(StandaloneReader)
 	c.opts = opts
 	//c.aofStorage = aofStorage
 	//c.aofSaveIndex = 0
 	//c.writeCache = NewIntervalMaxSizeCache(time.Millisecond*500, 16*1024)
-	c.client = client.NewRedisClient(ctx, opts.Address, opts.Username, opts.Password, opts.Tls, opts.TlsConfig, opts.PreferReplica)
+	c.client, err = client.NewRedisClient(ctx, opts.Address, opts.Username, opts.Password, opts.Tls, opts.TlsConfig, opts.PreferReplica)
+	if err != nil {
+		return nil, err
+	}
 
 	c.stat.Name = "reader_" + strings.Replace(opts.Address, ":", "_", -1)
 	c.stat.Address = opts.Address
@@ -48,7 +52,7 @@ func NewStandaloneReader(ctx context.Context, opts *SyncReaderOptions) *Standalo
 	c.stat.Dir = saveDirPath //filepath.Join(saveDirPath, c.stat.Name)
 	utils.CreateEmptyDir(c.stat.Dir)
 
-	return c
+	return c, nil
 }
 
 func (r *StandaloneReader) supportPSync() bool {

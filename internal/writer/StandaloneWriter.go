@@ -18,6 +18,17 @@ import (
 	"redisFlutter/internal/log"
 )
 
+type RedisWriterOptions struct {
+	Cluster   bool                   `mapstructure:"cluster" default:"false"`
+	Address   string                 `mapstructure:"address" default:""`
+	Username  string                 `mapstructure:"username" default:""`
+	Password  string                 `mapstructure:"password" default:""`
+	Tls       bool                   `mapstructure:"tls" default:"false"`
+	TlsConfig client.TlsConfig       `mapstructure:"tls_config" default:"{}"`
+	OffReply  bool                   `mapstructure:"off_reply" default:"false"`
+	Sentinel  client.SentinelOptions `mapstructure:"sentinel"`
+}
+
 type StandaloneWriter struct {
 	address string
 	client  *client.Redis
@@ -36,11 +47,15 @@ type StandaloneWriter struct {
 	}
 }
 
-func NewStandaloneWriter(ctx context.Context, opts *RedisWriterOptions) Writer {
+func NewStandaloneWriter(ctx context.Context, opts *RedisWriterOptions) (Writer, error) {
+	var err error
 	rw := new(StandaloneWriter)
 	rw.address = opts.Address
 	rw.stat.Name = "writer_" + strings.Replace(opts.Address, ":", "_", -1)
-	rw.client = client.NewRedisClient(ctx, opts.Address, opts.Username, opts.Password, opts.Tls, opts.TlsConfig, false)
+	rw.client, err = client.NewRedisClient(ctx, opts.Address, opts.Username, opts.Password, opts.Tls, opts.TlsConfig, false)
+	if err != nil {
+		return nil, err
+	}
 	rw.ch = make(chan *entry.Entry, config.Opt.Advanced.PipelineCountLimit)
 	if opts.OffReply {
 		log.Infof("turn off the reply of write")
@@ -51,7 +66,7 @@ func NewStandaloneWriter(ctx context.Context, opts *RedisWriterOptions) Writer {
 		rw.chWaitWg.Add(1)
 		go rw.processReply()
 	}
-	return rw
+	return rw, nil
 }
 
 func (w *StandaloneWriter) Close() {

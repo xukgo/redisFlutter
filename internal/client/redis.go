@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"log/slog"
 	"net"
 	"os"
 	"regexp"
@@ -30,7 +31,7 @@ type TlsConfig struct {
 	KeyFilePath    string `mapstructure:"key" default:""`
 }
 
-func NewRedisClient(ctx context.Context, address string, username string, password string, Tls bool, tlsConfig TlsConfig, replica bool) *Redis {
+func NewRedisClient(ctx context.Context, address string, username string, password string, Tls bool, tlsConfig TlsConfig, replica bool) (*Redis, error) {
 	r := new(Redis)
 	var conn net.Conn
 	var dialer = &net.Dialer{
@@ -50,7 +51,8 @@ func NewRedisClient(ctx context.Context, address string, username string, passwo
 		conn, err = dialer.DialContext(ctxWithDeadline, "tcp", address)
 	}
 	if err != nil {
-		log.Panicf("dial failed. address=[%s], tls=[%v], err=[%v]", address, Tls, err)
+		slog.Error("dial redis failed", slog.String("address", address), slog.Bool("Tls", Tls), slog.String("err", err.Error()))
+		return nil, err
 	}
 
 	r.conn = conn
@@ -83,10 +85,10 @@ func NewRedisClient(ctx context.Context, address string, username string, passwo
 		reply = r.DoWithStringReply("info", "replication")
 		replicaInfo := getReplicaAddr(reply, address)
 		log.Infof("best replica: %s", replicaInfo.BestReplica)
-		r = NewRedisClient(ctx, replicaInfo.BestReplica, username, password, Tls, tlsConfig, false)
+		return NewRedisClient(ctx, replicaInfo.BestReplica, username, password, Tls, tlsConfig, false)
 	}
 
-	return r
+	return r, nil
 }
 
 func getTlsConfig(tlsConfig TlsConfig) *tls.Config {

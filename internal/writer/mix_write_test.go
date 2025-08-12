@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"redisFlutter/internal/aof"
 	"redisFlutter/internal/config"
@@ -29,7 +28,11 @@ func Test_write_rdb_aof_to_redis(t *testing.T) {
 		Address:  "127.0.0.1:36002",
 		OffReply: false,
 	}
-	redisWriter := NewStandaloneWriter(context.Background(), &opts)
+	redisWriter, err := NewStandaloneWriter(context.Background(), &opts)
+	if err != nil {
+		t.Error(err)
+		return
+	}
 	redisWriter.StartWrite(context.Background())
 
 	//rdb

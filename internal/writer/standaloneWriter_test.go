@@ -34,7 +34,10 @@ func Test_standaloneWriter01(t *testing.T) {
 		Address:  "127.0.0.1:36002",
 		OffReply: false,
 	}
-	redisWriter := NewStandaloneWriter(context.Background(), &opts)
+	redisWriter, err := NewStandaloneWriter(context.Background(), &opts)
+	if err != nil {
+		t.FailNow()
+	}
 	redisWriter.StartWrite(context.Background())
 
 	count := 0
