@@ -98,8 +98,12 @@ func (c *AofAddIndexWriter) RemoveAll() error {
 		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".aof") {
 			fname := entry.Name()
 			fullPath := filepath.Join(c.dir, fname)
-			_ = os.RemoveAll(fullPath)
-			slog.Info("remove file", slog.String("name", c.name), slog.String("filename", fname))
+			err = os.RemoveAll(fullPath)
+			if err != nil {
+				slog.Error("remove file failed", slog.String("name", c.name), slog.String("filename", fname))
+			} else {
+				slog.Info("remove file success", slog.String("name", c.name), slog.String("filename", fname))
+			}
 		}
 	}
 	return nil

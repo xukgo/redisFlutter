@@ -1,13 +1,16 @@
 package main
 
 import (
+	"bytes"
 	"compress/gzip"
 	"io"
 	"log/slog"
 	"mime/multipart"
 	"net/http"
 	"os"
-	"path/filepath"
+	"path"
+	"redisFlutter/constDefine"
+	rotate "redisFlutter/internal/utils/file_rotate"
 	"strings"
 	"sync"
 )
@@ -32,6 +35,8 @@ type FileUploadServer struct {
 	maxChunkSize int64
 	maxMemory    int64
 	mu           sync.Mutex // 保护文件操作
+
+	aofAddWriter *rotate.AofAddIndexWriter
 }
 
 // NewFileUploadServer 创建新的文件上传服务器实例
@@ -43,110 +48,259 @@ func NewFileUploadServer(addr string) *FileUploadServer {
 	var maxChunkSize int64 = 32 * 1024
 	var maxMemory int64 = 2 * 1024 * 1024
 
-	return &FileUploadServer{
+	c := &FileUploadServer{
 		addr:         addr,
 		maxChunkSize: maxChunkSize,
 		maxMemory:    maxMemory,
+		uploadDir:    "/tmp/httptest",
 	}
+	//var err error
+	//c.aofAddWriter,err = rotate.NewAofAddIndexWriter("syncServer", path.Join(c.uploadDir, "default"), 8*1024*1024)
+	return c
 }
 
-// ServeHTTP 实现http.Handler接口
-//func (s *FileUploadServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-//	switch r.URL.Path {
-//	case "/upload":
-//		s.handleUpload(w, r)
-//	case "/health":
-//		w.Write([]byte("OK"))
-//	default:
-//		http.NotFound(w, r)
-//	}
-//}
+func (c *FileUploadServer) handleUploadAof(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "only support POST method", http.StatusMethodNotAllowed)
+		return
+	}
+	// 1. stream parse multipart form data
+	reader, err := r.MultipartReader()
+	if err != nil {
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+	// 2. save form data
+	formMap := make(map[string]string)
+
+	var filePart *multipart.Part = nil
+	for {
+		part, err := reader.NextPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			http.Error(w, "Read Part Error", http.StatusInternalServerError)
+			return
+		}
+		if part.FormName() != "" && part.FileName() == "" {
+			valRaw, _ := io.ReadAll(part)
+			valText := string(valRaw)
+			formMap[part.FormName()] = valText
+			continue
+		}
+		if part.FileName() != "" {
+			filePart = part
+			break
+		}
+	}
+
+	redisTypeText, find := formMap["redisType"]
+	if !find {
+		http.Error(w, "redisType is empty", http.StatusBadGateway)
+		return
+	}
+	if redisTypeText == "standalone" {
+		c.processStandaloneAofUpload(w, formMap, filePart)
+	} else if redisTypeText == "cluster" {
+		//c.processClusterRdbUpload(w, r, filePart)
+	} else {
+		http.Error(w, "redisType is invalid", http.StatusBadGateway)
+	}
+}
 
 // handleUpload 处理文件上传请求
-func (s *FileUploadServer) handleUpload(w http.ResponseWriter, r *http.Request) {
+func (c *FileUploadServer) handleUploadRdb(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "只支持POST方法", http.StatusMethodNotAllowed)
+		http.Error(w, "only support POST method", http.StatusMethodNotAllowed)
 		return
 	}
-	// 限制内存使用
-	if err := r.ParseMultipartForm(s.maxMemory); err != nil {
-		http.Error(w, "解析表单错误: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-	// 获取文件名
-	filename := r.FormValue("filename")
-	if filename == "" {
-		http.Error(w, "文件名不能为空", http.StatusBadRequest)
-		return
-	}
-	// 安全处理文件名
-	filename = filepath.Base(filename)
-	filePath := filepath.Join(s.uploadDir, filename)
-	// 获取上传的文件
-	file, header, err := r.FormFile("file")
+	// 1. stream parse multipart form data
+	reader, err := r.MultipartReader()
 	if err != nil {
-		http.Error(w, "获取文件错误: "+err.Error(), http.StatusBadRequest)
+		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
-	defer file.Close()
-	// 处理文件上传
-	if err := s.processUpload(file, header, filePath); err != nil {
-		http.Error(w, "处理上传失败: "+err.Error(), http.StatusInternalServerError)
+	// 2. save form data
+	formMap := make(map[string]string)
+
+	var filePart *multipart.Part = nil
+	for {
+		part, err := reader.NextPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			http.Error(w, "Read Part Error", http.StatusInternalServerError)
+			return
+		}
+		if part.FormName() != "" && part.FileName() == "" {
+			valRaw, _ := io.ReadAll(part)
+			valText := string(valRaw)
+			formMap[part.FormName()] = valText
+			continue
+		}
+		if part.FileName() != "" {
+			filePart = part
+			break
+		}
+	}
+
+	redisTypeText, find := formMap["redisType"]
+	if !find {
+		http.Error(w, "redisType is empty", http.StatusBadGateway)
 		return
 	}
-	w.Write([]byte("文件上传成功: " + filename))
+	if redisTypeText == "standalone" {
+		c.processStandaloneRdbUpload(w, formMap, filePart)
+	} else if redisTypeText == "cluster" {
+		//c.processClusterRdbUpload(w, r, filePart)
+	} else {
+		http.Error(w, "redisType is invalid", http.StatusBadGateway)
+	}
 }
 
-// processUpload 处理文件上传逻辑
-func (s *FileUploadServer) processUpload(file multipart.File, header *multipart.FileHeader, filePath string) error {
-	// 加锁确保并发安全
-	s.mu.Lock()
-	defer s.mu.Unlock()
+func (c *FileUploadServer) processStandaloneAofUpload(w http.ResponseWriter, formMap map[string]string, filePart *multipart.Part) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if filePart == nil {
+		http.Error(w, "no file stream", http.StatusBadGateway)
+		return
+	}
 
-	// 创建目标文件
-	output, err := os.Create(filePath)
+	redisInstName, find := formMap["instance"]
+	if !find {
+		http.Error(w, "instance is empty", http.StatusBadGateway)
+		return
+	}
+	aofIndex, find := formMap["aofIndex"]
+	if !find {
+		http.Error(w, "aofIndex is empty", http.StatusBadGateway)
+		return
+	}
+	_ = aofIndex
+
+	var err error
+	saveDir := path.Join(c.uploadDir, redisInstName)
+	err = os.MkdirAll(saveDir, 0755)
+	if err != nil {
+		http.Error(w, "Create Directory Error", http.StatusInternalServerError)
+		return
+	}
+	err = c.saveAofStream(w, saveDir, filePart)
+	if err != nil {
+		return
+	}
+	w.Write([]byte("Upload Success"))
+}
+
+func (c *FileUploadServer) saveAofStream(w http.ResponseWriter, saveDir string, filePart *multipart.Part) error {
+	return nil
+}
+func (c *FileUploadServer) processStandaloneRdbUpload(w http.ResponseWriter, formMap map[string]string, filePart *multipart.Part) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if filePart == nil {
+		http.Error(w, "no file stream", http.StatusBadGateway)
+		return
+	}
+
+	redisInstName, find := formMap["instance"]
+	if !find {
+		http.Error(w, "instance is empty", http.StatusBadGateway)
+		return
+	}
+
+	var err error
+	saveDir := path.Join(c.uploadDir, redisInstName)
+	err = os.MkdirAll(saveDir, 0755)
+	if err != nil {
+		http.Error(w, "Create Directory Error", http.StatusInternalServerError)
+		return
+	}
+	savePath := path.Join(saveDir, constDefine.REDIS_RDB_FILENAME)
+	err = c.saveFile(w, savePath, filePart)
+	if err != nil {
+		return
+	}
+	w.Write([]byte("Upload Success"))
+}
+
+func (c *FileUploadServer) saveFile(w http.ResponseWriter, savePath string, filePart *multipart.Part) error {
+	fi, err := os.Create(savePath)
+	if err != nil {
+		http.Error(w, "Create File Error", http.StatusInternalServerError)
+		return err
+	}
+	defer fi.Close()
+
+	aheadBuff := make([]byte, 2)
+	n, err := filePart.Read(aheadBuff)
 	if err != nil {
 		return err
 	}
-	defer output.Close()
-	// 检查是否为gzip压缩
-	contentEncoding := header.Header.Get("Content-Encoding")
-	isGzipped := strings.Contains(strings.ToLower(contentEncoding), "gzip")
-	var src io.Reader = file
-	if isGzipped {
-		gz, err := gzip.NewReader(file)
+
+	var reader io.Reader = filePart
+	// push back Reader，avoid lost data
+	if n > 0 {
+		reader = io.MultiReader(bytes.NewReader(aheadBuff[:n]), filePart)
+	}
+
+	//check gzip magic number
+	if n >= 2 && aheadBuff[0] == 0x1F && aheadBuff[1] == 0x8B {
+		gzReader, err := gzip.NewReader(reader)
 		if err != nil {
+			http.Error(w, "Gzip decompress Error", http.StatusInternalServerError)
 			return err
 		}
-		defer gz.Close()
-		src = gz
+		defer gzReader.Close()
+		_, err = io.Copy(fi, gzReader)
+		if err != nil {
+			http.Error(w, "Write File Error", http.StatusInternalServerError)
+			return err
+		}
+	} else {
+		_, err := io.Copy(fi, reader)
+		if err != nil {
+			http.Error(w, "Write File Error", http.StatusInternalServerError)
+			return err
+		}
 	}
-	// 使用缓冲区按chunk写入
-	buf := make([]byte, s.maxChunkSize)
-	_, err = io.CopyBuffer(output, src, buf)
-	return err
+	return nil
+}
+
+func (c *FileUploadServer) checkFormMapGzipEnable(formMap map[string]string) bool {
+	redisInstName, find := formMap["isGzip"]
+	if !find {
+		return false
+	}
+	if strings.EqualFold(redisInstName, "true") {
+		return true
+	}
+	return false
 }
 
 // Start 启动HTTP服务器
-func (s *FileUploadServer) Start() error {
-	//log.Printf("文件上传服务器启动，监听 %s...", addr)
-	//log.Printf("上传目录: %s", s.uploadDir)
-	//log.Printf("配置: 块大小=%d字节, 最大内存=%d字节", s.maxChunkSize, s.maxMemory)
+func (c *FileUploadServer) Start() error {
+	//log.Printf("文件上传服务器启动，监听 %c...", addr)
+	//log.Printf("上传目录: %c", c.uploadDir)
+	//log.Printf("配置: 块大小=%d字节, 最大内存=%d字节", c.maxChunkSize, c.maxMemory)
 	// 创建ServeMux实例
 	mux := http.NewServeMux()
 	// 注册GET路由
-	//mux.HandleFunc("GET /", s.getStatusHandler)
+	//mux.HandleFunc("GET /", c.getStatusHandler)
 	//mux.HandleFunc("GET /about", aboutHandler)
 	//mux.HandleFunc("GET /users/{id}", userHandler)
 
 	// 注册POST路由
 	//mux.HandleFunc("POST /login", loginHandler)
-	mux.HandleFunc("POST /upload", s.handleUpload)
+	mux.HandleFunc("POST /uploadRdb", c.handleUploadRdb)
+	mux.HandleFunc("POST /uploadAof", c.handleUploadAof)
 
 	// 启动服务器
-	slog.Info("server start", slog.String("addr", s.addr))
+	slog.Info("server start", slog.String("addr", c.addr))
 	var err error
-	if err = http.ListenAndServe(s.addr, mux); err != nil {
+	if err = http.ListenAndServe(c.addr, mux); err != nil {
 		slog.Error("server start error", slog.String("err", err.Error()))
 	}
 	return err

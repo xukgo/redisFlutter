@@ -19,14 +19,13 @@ import (
 )
 
 type RedisWriterOptions struct {
-	Cluster   bool                   `mapstructure:"cluster" default:"false"`
-	Address   string                 `mapstructure:"address" default:""`
-	Username  string                 `mapstructure:"username" default:""`
-	Password  string                 `mapstructure:"password" default:""`
-	Tls       bool                   `mapstructure:"tls" default:"false"`
-	TlsConfig client.TlsConfig       `mapstructure:"tls_config" default:"{}"`
-	OffReply  bool                   `mapstructure:"off_reply" default:"false"`
-	Sentinel  client.SentinelOptions `mapstructure:"sentinel"`
+	Cluster   bool             `mapstructure:"cluster" default:"false"`
+	Address   string           `mapstructure:"address" default:""`
+	Username  string           `mapstructure:"username" default:""`
+	Password  string           `mapstructure:"password" default:""`
+	Tls       bool             `mapstructure:"tls" default:"false"`
+	TlsConfig client.TlsConfig `mapstructure:"tls_config" default:"{}"`
+	OffReply  bool             `mapstructure:"off_reply" default:"false"`
 }
 
 type StandaloneWriter struct {
