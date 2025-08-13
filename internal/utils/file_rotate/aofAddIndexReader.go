@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path"
+	"redisFlutter/constDefine"
 	"redisFlutter/internal/utils"
 	"time"
 )
@@ -40,7 +41,7 @@ func NewAofAddIndexReader(ctx context.Context, name string, dir string, startFil
 }
 
 func (c *AofAddIndexReader) getIndexFilePath(index int64) string {
-	filepath := path.Join(c.dir, fmt.Sprintf("%d.aof", index))
+	filepath := path.Join(c.dir, fmt.Sprintf("%d%s", index, constDefine.REDIS_APPEND_CMD_FILE_SUFFIX))
 	return filepath
 }
 

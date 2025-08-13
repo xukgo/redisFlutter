@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"redisFlutter/constDefine"
 	"redisFlutter/internal/log"
 	"redisFlutter/internal/utils"
 	"time"
@@ -26,7 +27,7 @@ func NewAOFReader(ctx context.Context, name string, dir string, offset int64) *A
 	r.name = name
 	r.dir = dir
 
-	filepath := fmt.Sprintf("%s/%d.aof", r.dir, r.offset)
+	filepath := fmt.Sprintf("%s/%d%s", r.dir, r.offset, constDefine.REDIS_APPEND_CMD_FILE_SUFFIX)
 
 	startWaitTimeStart := time.Now()
 	for !utils.IsExist(filepath) {
@@ -41,7 +42,7 @@ func NewAOFReader(ctx context.Context, name string, dir string, offset int64) *A
 }
 
 func (r *AOFReader) openFile(offset int64) {
-	r.filepath = fmt.Sprintf("%s/%d.aof", r.dir, r.offset)
+	r.filepath = fmt.Sprintf("%s/%d%s", r.dir, r.offset, constDefine.REDIS_APPEND_CMD_FILE_SUFFIX)
 	var err error
 	r.file, err = os.OpenFile(r.filepath, os.O_RDONLY, 0644)
 	if err != nil {
@@ -53,7 +54,7 @@ func (r *AOFReader) openFile(offset int64) {
 }
 
 func (r *AOFReader) readNextFile(offset int64) bool {
-	filepath := fmt.Sprintf("%s/%d.aof", r.dir, r.offset)
+	filepath := fmt.Sprintf("%s/%d%s", r.dir, r.offset, constDefine.REDIS_APPEND_CMD_FILE_SUFFIX)
 	if r.filepath == filepath {
 		return false
 	}

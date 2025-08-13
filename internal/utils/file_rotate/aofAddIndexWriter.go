@@ -2,10 +2,12 @@ package rotate
 
 import (
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path"
 	"path/filepath"
+	"redisFlutter/constDefine"
 	"strings"
 )
 
@@ -28,24 +30,76 @@ func NewAofAddIndexWriter(name string, dir string, singleFileMaxSize int64) (*Ao
 	w.name = name
 	w.dir = dir
 	w.singleFileMaxSize = singleFileMaxSize
-	w.fileIndex = 0
-	w.file = nil
-	w.filesize = 0
 	os.MkdirAll(dir, 0755)
-	err := w.openFile(w.fileIndex)
-	return w, err
+
+	indexArr := ScanAddIndexSuffixFiles(dir, constDefine.REDIS_APPEND_CMD_FILE_SUFFIX)
+	if len(indexArr) == 0 {
+		w.fileIndex = 0
+		w.file = nil
+		w.filesize = 0
+		err := w.openNewFile(w.fileIndex)
+		return w, err
+	} else {
+		maxIndex := indexArr[len(indexArr)-1]
+		cfpath := path.Join(dir, fmt.Sprintf("%d%s", maxIndex, constDefine.REDIS_APPEND_CMD_FILE_SUFFIX))
+		finfo, err := os.Stat(cfpath)
+		if err != nil {
+			return w, err
+		}
+
+		fsize := finfo.Size()
+		if fsize >= w.singleFileMaxSize {
+			w.fileIndex = maxIndex + 1
+			w.file = nil
+			w.filesize = 0
+			err = w.openNewFile(w.fileIndex)
+			return w, err
+		}
+
+		w.fileIndex = maxIndex
+		w.file = nil
+		err = w.openExistFile(cfpath)
+		return w, err
+	}
 }
 
-func (c *AofAddIndexWriter) openFile(index int64) error {
-	c.filepath = path.Join(c.dir, fmt.Sprintf("%d.aof", index))
+func (c *AofAddIndexWriter) Reinit() error {
+	c.Close()
+	c.RemoveAll()
+
+	c.file = nil
+	c.filesize = 0
+	c.fileIndex = 0
+	c.filesize = 0
+
+	err := c.openNewFile(c.fileIndex)
+	return err
+}
+
+func (c *AofAddIndexWriter) openExistFile(fp string) error {
+	c.filepath = fp
+	var err error
+	c.file, err = os.OpenFile(fp, os.O_WRONLY, 0644) //os.O_TRUNC,os.O_APPEND
+	if err != nil {
+		slog.Error("open exist file for write error", slog.String("name", c.name), slog.String("filepath", c.filepath), slog.String("error", err.Error()))
+		return err
+	}
+	c.filesize, _ = c.file.Seek(0, io.SeekEnd)
+	c.file.Seek(0, io.SeekStart)
+	slog.Info("open exist file for write success", slog.String("name", c.name), slog.String("filepath", c.filepath))
+	return nil
+}
+
+func (c *AofAddIndexWriter) openNewFile(index int64) error {
+	c.filepath = path.Join(c.dir, fmt.Sprintf("%d%s", index, constDefine.REDIS_APPEND_CMD_FILE_SUFFIX))
 	var err error
 	c.file, err = os.OpenFile(c.filepath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644) //os.O_TRUNC,os.O_APPEND
 	if err != nil {
-		slog.Error("open file for write error", slog.String("name", c.name), slog.String("filepath", c.filepath), slog.String("error", err.Error()))
+		slog.Error("open new file for write error", slog.String("name", c.name), slog.String("filepath", c.filepath), slog.String("error", err.Error()))
 		return err
 	}
 	c.filesize = 0
-	slog.Info("open file for write success", slog.String("name", c.name), slog.String("filepath", c.filepath))
+	slog.Info("open new file for write success", slog.String("name", c.name), slog.String("filepath", c.filepath))
 	return nil
 }
 
@@ -61,7 +115,7 @@ func (c *AofAddIndexWriter) Write(buf []byte) (int, error) {
 	if c.filesize >= c.singleFileMaxSize {
 		c.Close()
 		c.fileIndex++
-		err = c.openFile(c.fileIndex)
+		err = c.openNewFile(c.fileIndex)
 		if err != nil {
 			return 0, err
 		}
@@ -95,7 +149,7 @@ func (c *AofAddIndexWriter) RemoveAll() error {
 		return err
 	}
 	for _, entry := range entries {
-		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".aof") {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), constDefine.REDIS_APPEND_CMD_FILE_SUFFIX) {
 			fname := entry.Name()
 			fullPath := filepath.Join(c.dir, fname)
 			err = os.RemoveAll(fullPath)

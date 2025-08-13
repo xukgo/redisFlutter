@@ -3,6 +3,7 @@ package rotate
 import (
 	"fmt"
 	"os"
+	"redisFlutter/constDefine"
 
 	"redisFlutter/internal/log"
 )
@@ -28,7 +29,7 @@ func NewAOFWriter(name string, dir string, offset int64) *AOFWriter {
 }
 
 func (w *AOFWriter) openFile(offset int64) {
-	w.filepath = fmt.Sprintf("%s/%d.aof", w.dir, w.offset)
+	w.filepath = fmt.Sprintf("%s/%d%s", w.dir, w.offset, constDefine.REDIS_APPEND_CMD_FILE_SUFFIX)
 	var err error
 	w.file, err = os.OpenFile(w.filepath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
 	if err != nil {

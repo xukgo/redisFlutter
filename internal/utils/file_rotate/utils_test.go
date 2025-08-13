@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"os"
 	"path"
+	"redisFlutter/constDefine"
 	"testing"
 )
 
@@ -43,6 +44,6 @@ func Test_ScanAddIndexSuffixFiles(t *testing.T) {
 		}
 		f.Close()
 	}
-	arr := ScanAddIndexSuffixFiles(dirPath, ".aof")
+	arr := ScanAddIndexSuffixFiles(dirPath, constDefine.REDIS_APPEND_CMD_FILE_SUFFIX)
 	assert.True(t, len(arr) == 50)
 }
