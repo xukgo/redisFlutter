@@ -1,0 +1,38 @@
+{
+  "logLevel": "info",
+  "listenPort": 8061,
+  "keepAliveSecond": 3,
+  "dataDir": "/tmp/redisSyncDest/",
+  "instances": [
+    {
+      "name": "upf-xuk-2",
+      "redisServer": {
+        "addr": "172.16.0.233:6379",
+        "password": ""
+      },
+      "blockKeys": [
+        "aa",
+        "bb"
+      ],
+      "blockKeyPrefixs": [
+        "startaa",
+        "startbb"
+      ],
+      "blockKeySuffixs": [
+        "endaa",
+        "endbb"
+      ],
+      "blockKeyRegexs": [
+        "^start:.*:end$"
+      ],
+      "blockCommands": [
+        "XADD",
+        "XLEN",
+        "XRANGE",
+        "XREVRANGE",
+        "XDEL",
+        "XTRIM"
+      ]
+    }
+  ]
+}
