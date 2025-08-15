@@ -3,6 +3,7 @@ package reader
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"github.com/dustin/go-humanize"
 	"io"
 	"os"
@@ -17,6 +18,75 @@ import (
 	"strings"
 	"time"
 )
+
+type SyncReaderOptions struct {
+	Cluster       bool                   `mapstructure:"cluster" default:"false"`
+	Address       string                 `mapstructure:"address" default:""`
+	Username      string                 `mapstructure:"username" default:""`
+	Password      string                 `mapstructure:"password" default:""`
+	Tls           bool                   `mapstructure:"tls" default:"false"`
+	TlsConfig     client.TlsConfig       `mapstructure:"tls_config" default:"{}"`
+	SyncRdb       bool                   `mapstructure:"sync_rdb" default:"true"`
+	SyncAof       bool                   `mapstructure:"sync_aof" default:"true"`
+	PreferReplica bool                   `mapstructure:"prefer_replica" default:"false"`
+	TryDiskless   bool                   `mapstructure:"try_diskless" default:"false"`
+	Sentinel      client.SentinelOptions `mapstructure:"sentinel"`
+
+	DataDirPath string `mapstructure:"data_dir_path" default:""`
+}
+
+const RDB_EOF_MARKER_LEN = 40
+
+type State string
+
+const (
+	kHandShake  State = "hand shaking"
+	kWaitBgsave State = "waiting bgsave"
+	kReceiveRdb State = "receiving rdb"
+	kSyncRdb    State = "syncing rdb"
+	kSyncAof    State = "syncing aof"
+)
+
+type syncStandaloneReaderStat struct {
+	Name    string `json:"name"`
+	Address string `json:"address"`
+	Dir     string `json:"dir"`
+
+	// status
+	Status State `json:"status"`
+
+	// rdb info
+	RdbFileSizeBytes uint64 `json:"rdb_file_size_bytes"` // bytes of the rdb file
+	RdbFileSizeHuman string `json:"rdb_file_size_human"`
+	RdbReceivedBytes uint64 `json:"rdb_received_bytes"` // bytes of RDB received from master
+	RdbReceivedHuman string `json:"rdb_received_human"`
+	RdbSentBytes     uint64 `json:"rdb_sent_bytes"` // bytes of RDB sent to chan
+	RdbSentHuman     string `json:"rdb_sent_human"`
+
+	// aof info
+	AofReceivedOffset int64  `json:"aof_received_offset"` // offset of AOF received from master
+	AofSentOffset     int64  `json:"aof_sent_offset"`     // offset of AOF sent to chan
+	AofReceivedBytes  uint64 `json:"aof_received_bytes"`  // bytes of AOF received from master
+	AofReceivedHuman  string `json:"aof_received_human"`
+}
+
+func (s syncStandaloneReaderStat) MarshalJSON() ([]byte, error) {
+	if s.RdbFileSizeBytes != 0 {
+		s.RdbFileSizeHuman = humanize.IBytes(s.RdbFileSizeBytes)
+	}
+	if s.RdbReceivedBytes != 0 {
+		s.RdbReceivedHuman = humanize.IBytes(s.RdbReceivedBytes)
+	}
+	if s.RdbSentBytes != 0 {
+		s.RdbSentHuman = humanize.IBytes(s.RdbSentBytes)
+	}
+	if s.AofReceivedBytes != 0 {
+		s.AofReceivedHuman = humanize.IBytes(s.AofReceivedBytes)
+	}
+
+	type aliasStat syncStandaloneReaderStat // alias to avoid infinite recursion
+	return json.Marshal(aliasStat(s))
+}
 
 type StandaloneReader struct {
 	opts *SyncReaderOptions

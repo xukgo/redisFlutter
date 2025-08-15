@@ -1,12 +1,10 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"log/slog"
 	"os"
 	"redisFlutter/internal/log"
-	"redisFlutter/internal/reader"
 	"time"
 )
 
@@ -19,13 +17,13 @@ func main() {
 
 	log.Init("debug", "0.log", "log", true, 512, 7, 3, true)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	opt := reader.SyncReaderOptions{
-		Address:     "127.0.0.1:36001",
-		DataDirPath: "/tmp/redisFlutter/inst1",
-	}
+	//ctx, cancel := context.WithCancel(context.Background())
+	//defer cancel()
+	//
+	//opt := reader.SyncReaderOptions{
+	//	Address:     "127.0.0.1:36001",
+	//	DataDirPath: "/tmp/redisFlutter/inst1",
+	//}
 
 	//aofSaveDir := "/tmp/redisFlutter/aof"
 	//aofWriter := rotate.NewAOFWriter(opt.Address, aofSaveDir, 0)
@@ -34,8 +32,8 @@ func main() {
 	//if err != nil {
 	//	panic(err)
 	//}
-	r := reader.NewStandaloneReader(ctx, &opt)
-	r.StartRead(ctx)
+	//r := reader.NewStandaloneReader(ctx, &opt)
+	//r.StartRead(ctx)
 
 	for {
 		time.Sleep(time.Hour)

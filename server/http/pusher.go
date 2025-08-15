@@ -1,4 +1,4 @@
-package syncPush
+package http
 
 import (
 	"bytes"

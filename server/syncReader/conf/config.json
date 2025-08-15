@@ -4,7 +4,7 @@
   "targetEndpoint": "http://172.16.0.25:8061",
   "dataDir": "/tmp/redisSyncSource/",
   "redisServer": {
-    "addr": "192.168.5.1:6379",
+    "addr": "127.0.0.1:36001",
     "password": ""
   }
 }
